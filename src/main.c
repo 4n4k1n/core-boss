@@ -270,40 +270,68 @@ void ft_on_tick(unsigned long tick)
 			}
 			else if (unit->s_unit.unit_type == UNIT_CARRIER)
 			{
-				// Carriers help transport money between miners and core
+				// Carriers first collect money from ground, then help miners
 				if (unit->s_unit.balance <= 0)
 				{
-					// Find a miner with money to collect from
-					t_obj **all_units = ft_get_units_own();
-					t_obj *best_miner = NULL;
-					double best_distance = -1;
-					
-					if (all_units)
+					// First priority: collect money from the ground
+					t_obj *nearest_money = ft_get_money_nearest(unit->pos);
+					if (nearest_money)
 					{
-						for (int k = 0; all_units[k]; k++)
-						{
-							if (all_units[k]->s_unit.unit_type == UNIT_MINER && 
-								all_units[k]->s_unit.balance > 0)
-							{
-								double distance = ft_calculate_distance(unit->pos, all_units[k]->pos);
-								if (best_distance < 0 || distance < best_distance)
-								{
-									best_distance = distance;
-									best_miner = all_units[k];
-								}
-							}
-						}
-						free(all_units);
+						move_and_attack(unit, nearest_money->pos);
 					}
-					
-					if (best_miner)
-						move_and_attack(unit, best_miner->pos);
 					else
 					{
-						// No miners with money, help attack enemy core
-						t_obj *enemy_core = ft_get_core_opponent();
-						if (enemy_core)
-							move_and_attack(unit, enemy_core->pos);
+						// No money on ground, find a miner with money to collect from
+						// Assign different miners to different carriers to avoid conflicts
+						t_obj **all_units = ft_get_units_own();
+						t_obj *target_miner = NULL;
+						
+						if (all_units)
+						{
+							int carrier_index = 0;
+							int current_carrier = 0;
+							
+							// Find which carrier this is (0 or 1)
+							for (int k = 0; all_units[k]; k++)
+							{
+								if (all_units[k]->s_unit.unit_type == UNIT_CARRIER)
+								{
+									if (all_units[k]->id == unit->id)
+									{
+										carrier_index = current_carrier;
+										break;
+									}
+									current_carrier++;
+								}
+							}
+							
+							// Assign miner based on carrier index
+							int miner_count = 0;
+							for (int k = 0; all_units[k]; k++)
+							{
+								if (all_units[k]->s_unit.unit_type == UNIT_MINER && 
+									all_units[k]->s_unit.balance > 0)
+								{
+									if (miner_count == carrier_index)
+									{
+										target_miner = all_units[k];
+										break;
+									}
+									miner_count++;
+								}
+							}
+							free(all_units);
+						}
+						
+						if (target_miner)
+							move_and_attack(unit, target_miner->pos);
+						else
+						{
+							// No miners with money, help attack enemy core
+							t_obj *enemy_core = ft_get_core_opponent();
+							if (enemy_core)
+								move_and_attack(unit, enemy_core->pos);
+						}
 					}
 				}
 				else
