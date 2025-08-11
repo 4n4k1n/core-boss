@@ -2,6 +2,7 @@
 
 #include <time.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 void ft_on_tick(unsigned long tick);
 
@@ -61,27 +62,75 @@ void ft_on_tick(unsigned long tick)
 		core_action_createUnit(UNIT_MINER);
 	}
 
-	// Control all miners
+	// Get all resources and assign miners 1:1
+	t_obj **all_resources = ft_get_all_resources();
 	t_obj **units = ft_get_units_own();
-	for (int i = 0; units && units[i]; i++)
+	
+	// Create assignment array - each miner gets assigned to exactly one resource
+	if (all_resources && units)
 	{
-		t_obj *miner = units[i];
-		if (miner->state != STATE_ALIVE || miner->s_unit.unit_type != UNIT_MINER)
-			continue;
-
-		// If miner has no money, go to nearest resource
-		if (miner->s_unit.balance <= 0)
+		// Count miners
+		int miner_count = 0;
+		for (int i = 0; units[i]; i++)
 		{
-			t_obj *nearest_resource = ft_get_resource_money_nearest(miner->pos);
-			if (nearest_resource)
-				move_and_attack(miner, nearest_resource->pos);
+			if (units[i]->state == STATE_ALIVE && units[i]->s_unit.unit_type == UNIT_MINER)
+				miner_count++;
 		}
-		// If miner has money, return to core and transfer it
-		else
+		
+		// Count resources
+		int resource_count = 0;
+		for (int i = 0; all_resources[i]; i++)
+			resource_count++;
+		
+		// Assign each miner to the nearest available resource
+		bool *resource_assigned = calloc(resource_count, sizeof(bool));
+		
+		for (int i = 0; units && units[i]; i++)
 		{
-			move_and_attack(miner, core_own->pos);
-			core_action_transferMoney(miner, core_own->pos, miner->s_unit.balance);
+			t_obj *miner = units[i];
+			if (miner->state != STATE_ALIVE || miner->s_unit.unit_type != UNIT_MINER)
+				continue;
+			
+			t_obj *assigned_resource = NULL;
+			double best_distance = -1;
+			int best_resource_idx = -1;
+			
+			// Find nearest unassigned resource
+			for (int j = 0; j < resource_count; j++)
+			{
+				if (resource_assigned[j])
+					continue;
+					
+				double distance = ft_calculate_distance(miner->pos, all_resources[j]->pos);
+				if (best_distance < 0 || distance < best_distance)
+				{
+					best_distance = distance;
+					assigned_resource = all_resources[j];
+					best_resource_idx = j;
+				}
+			}
+			
+			if (assigned_resource)
+			{
+				resource_assigned[best_resource_idx] = true;
+				
+				// If miner has no money, go to assigned resource
+				if (miner->s_unit.balance <= 0)
+				{
+					move_and_attack(miner, assigned_resource->pos);
+				}
+				// If miner has money, return to core and transfer it
+				else
+				{
+					move_and_attack(miner, core_own->pos);
+					core_action_transferMoney(miner, core_own->pos, miner->s_unit.balance);
+				}
+			}
 		}
+		
+		free(resource_assigned);
 	}
-	free(units);
+	
+	if (all_resources) free(all_resources);
+	if (units) free(units);
 }

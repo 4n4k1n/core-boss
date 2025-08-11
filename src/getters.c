@@ -122,3 +122,61 @@ int ft_count_miners_opponent(void)
 	}
 	return count;
 }
+
+t_obj **ft_get_all_resources(void)
+{
+	return core_get_objs_customCondition(is_resource_money);
+}
+
+double ft_calculate_distance(t_pos pos1, t_pos pos2)
+{
+	int dx = pos1.x - pos2.x;
+	int dy = pos1.y - pos2.y;
+	return (dx * dx + dy * dy);
+}
+
+t_obj *ft_find_nearest_unassigned_resource(t_pos miner_pos, t_obj **all_miners)
+{
+	t_obj **all_resources = ft_get_all_resources();
+	if (!all_resources)
+		return NULL;
+
+	t_obj *best_resource = NULL;
+	double best_distance = -1;
+
+	for (int i = 0; all_resources[i]; i++)
+	{
+		t_obj *resource = all_resources[i];
+		bool is_assigned = false;
+
+		// Check if this resource is already assigned to another miner
+		for (int j = 0; all_miners && all_miners[j]; j++)
+		{
+			t_obj *other_miner = all_miners[j];
+			if (other_miner->s_unit.unit_type != UNIT_MINER)
+				continue;
+
+			// Check if other miner is closer to this resource than to any other
+			t_obj *other_target = ft_get_resource_money_nearest(other_miner->pos);
+			if (other_target && other_target->id == resource->id && 
+				other_miner->pos.x != miner_pos.x && other_miner->pos.y != miner_pos.y)
+			{
+				is_assigned = true;
+				break;
+			}
+		}
+
+		if (!is_assigned)
+		{
+			double distance = ft_calculate_distance(miner_pos, resource->pos);
+			if (best_distance < 0 || distance < best_distance)
+			{
+				best_distance = distance;
+				best_resource = resource;
+			}
+		}
+	}
+
+	free(all_resources);
+	return best_resource;
+}
