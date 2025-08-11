@@ -54,12 +54,16 @@ void ft_on_tick(unsigned long tick)
 	int resource_count = ft_count_resources();
 	int own_miners = ft_count_miners_own();
 	int opponent_miners = ft_count_miners_opponent();
-	double max_miners = resource_count * 0.75;
+	double max_miners = resource_count * 0.6;
 	
-	// Only spawn miners if we have enough money and haven't hit the limit
+	// Spawn miners if we haven't hit the limit, otherwise spawn warriors
 	if (core_own->s_core.balance >= 100 && (own_miners + opponent_miners) < max_miners)
 	{
 		core_action_createUnit(UNIT_MINER);
+	}
+	else if (core_own->s_core.balance >= 150)  // Warrior cost is 150
+	{
+		core_action_createUnit(UNIT_WARRIOR);
 	}
 
 	// Get all resources and assign miners 1:1
@@ -87,43 +91,59 @@ void ft_on_tick(unsigned long tick)
 		
 		for (int i = 0; units && units[i]; i++)
 		{
-			t_obj *miner = units[i];
-			if (miner->state != STATE_ALIVE || miner->s_unit.unit_type != UNIT_MINER)
+			t_obj *unit = units[i];
+			if (unit->state != STATE_ALIVE)
 				continue;
 			
-			t_obj *assigned_resource = NULL;
-			double best_distance = -1;
-			int best_resource_idx = -1;
-			
-			// Find nearest unassigned resource
-			for (int j = 0; j < resource_count; j++)
+			if (unit->s_unit.unit_type == UNIT_MINER)
 			{
-				if (resource_assigned[j])
-					continue;
-					
-				double distance = ft_calculate_distance(miner->pos, all_resources[j]->pos);
-				if (best_distance < 0 || distance < best_distance)
+				t_obj *assigned_resource = NULL;
+				double best_distance = -1;
+				int best_resource_idx = -1;
+				
+				// Find nearest unassigned resource
+				for (int j = 0; j < resource_count; j++)
 				{
-					best_distance = distance;
-					assigned_resource = all_resources[j];
-					best_resource_idx = j;
+					if (resource_assigned[j])
+						continue;
+						
+					double distance = ft_calculate_distance(unit->pos, all_resources[j]->pos);
+					if (best_distance < 0 || distance < best_distance)
+					{
+						best_distance = distance;
+						assigned_resource = all_resources[j];
+						best_resource_idx = j;
+					}
+				}
+				
+				if (assigned_resource)
+				{
+					resource_assigned[best_resource_idx] = true;
+					
+					// If miner has no money, go to assigned resource
+					if (unit->s_unit.balance <= 0)
+					{
+						move_and_attack(unit, assigned_resource->pos);
+					}
+					// If miner has money, return to core and transfer it
+					else
+					{
+						move_and_attack(unit, core_own->pos);
+						core_action_transferMoney(unit, core_own->pos, unit->s_unit.balance);
+					}
 				}
 			}
-			
-			if (assigned_resource)
+			else if (unit->s_unit.unit_type == UNIT_WARRIOR)
 			{
-				resource_assigned[best_resource_idx] = true;
-				
-				// If miner has no money, go to assigned resource
-				if (miner->s_unit.balance <= 0)
-				{
-					move_and_attack(miner, assigned_resource->pos);
-				}
-				// If miner has money, return to core and transfer it
+				// Warriors attack nearest enemy unit, or enemy core if no units
+				t_obj *closest_opponent = ft_get_units_opponent_nearest(unit->pos);
+				if (closest_opponent)
+					move_and_attack(unit, closest_opponent->pos);
 				else
 				{
-					move_and_attack(miner, core_own->pos);
-					core_action_transferMoney(miner, core_own->pos, miner->s_unit.balance);
+					t_obj *enemy_core = ft_get_core_opponent();
+					if (enemy_core)
+						move_and_attack(unit, enemy_core->pos);
 				}
 			}
 		}
