@@ -85,7 +85,32 @@ void move_and_attack(t_obj *unit, t_pos target_pos)
 				core_action_attack(unit, next_pos);
 			}
 		}
-		// Don't attack our own units/core - just move if possible
+		// Handle our own units - try to move around them to avoid deadlocks
+		else if (next_pos_obj->type == OBJ_UNIT && next_pos_obj->s_unit.team_id == game.my_team_id)
+		{
+			// Try to find alternative path around friendly unit
+			t_pos alt_pos = { unit->pos.x, unit->pos.y };
+			if (abs(dx) > abs(dy))
+			{
+				// We were moving horizontally, try vertical
+				int step = (dy > 0) ? 1 : (dy < 0) ? -1 : (rand() % 2) ? 1 : -1;
+				alt_pos.y += step;
+			}
+			else
+			{
+				// We were moving vertically, try horizontal
+				int step = (dx > 0) ? 1 : (dx < 0) ? -1 : (rand() % 2) ? 1 : -1;
+				alt_pos.x += step;
+			}
+			
+			t_obj *alt_obj = core_get_obj_from_pos(alt_pos);
+			if (!alt_obj)
+			{
+				core_action_move(unit, alt_pos);
+			}
+			// If can't move around, stay put (don't attack friendly unit)
+		}
+		// Don't attack our own core - just move if possible
 		else
 		{
 			core_action_move(unit, next_pos);
