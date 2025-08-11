@@ -138,7 +138,8 @@ void control_miner(t_obj *miner, t_obj *core_own, t_obj **all_resources, bool *r
 		else
 		{
 			move_and_attack(miner, core_own->pos);
-			core_action_transferMoney(miner, core_own->pos, miner->s_unit.balance);
+			if (miner->s_unit.move_cooldown == 0)
+				core_action_transferMoney(miner, core_own->pos, miner->s_unit.balance);
 		}
 	}
 	else if (resource_count == 0)
@@ -153,7 +154,8 @@ void control_miner(t_obj *miner, t_obj *core_own, t_obj **all_resources, bool *r
 		else
 		{
 			move_and_attack(miner, core_own->pos);
-			core_action_transferMoney(miner, core_own->pos, miner->s_unit.balance);
+			if (miner->s_unit.move_cooldown == 0)
+				core_action_transferMoney(miner, core_own->pos, miner->s_unit.balance);
 		}
 	}
 }
@@ -181,7 +183,8 @@ void control_carrier(t_obj *carrier, t_obj *core_own)
 	{
 		// Return to core to deposit
 		move_and_attack(carrier, core_own->pos);
-		core_action_transferMoney(carrier, core_own->pos, carrier->s_unit.balance);
+		if (carrier->s_unit.move_cooldown == 0)
+			core_action_transferMoney(carrier, core_own->pos, carrier->s_unit.balance);
 	}
 	else
 	{
@@ -348,6 +351,10 @@ void count_unit_types(int *miners, int *carriers, int *warriors)
 
 void move_and_attack(t_obj *unit, t_pos target_pos)
 {
+	// Check if unit is on cooldown - skip if it can't act
+	if (unit->s_unit.move_cooldown > 0)
+		return;
+		
 	int dx = target_pos.x - unit->pos.x;
 	int dy = target_pos.y - unit->pos.y;
 
