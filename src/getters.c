@@ -77,3 +77,48 @@ t_obj *ft_get_units_opponent_nearest(t_pos pos)
 {
 	return core_get_obj_customCondition_nearest(pos, is_unit_opponent);
 }
+
+int ft_count_resources(void)
+{
+	t_obj **resources = core_get_objs_customCondition(is_resource_money);
+	int count = 0;
+	if (resources)
+	{
+		while (resources[count])
+			count++;
+		free(resources);
+	}
+	return count;
+}
+
+int ft_count_miners_own(void)
+{
+	t_obj **units = ft_get_units_own();
+	int count = 0;
+	if (units)
+	{
+		for (int i = 0; units[i]; i++)
+		{
+			if (units[i]->s_unit.unit_type == UNIT_MINER)
+				count++;
+		}
+		free(units);
+	}
+	return count;
+}
+
+int ft_count_miners_opponent(void)
+{
+	t_obj **units = ft_get_units_opponent();
+	int count = 0;
+	if (units)
+	{
+		for (int i = 0; units[i]; i++)
+		{
+			if (units[i]->s_unit.unit_type == UNIT_MINER)
+				count++;
+		}
+		free(units);
+	}
+	return count;
+}

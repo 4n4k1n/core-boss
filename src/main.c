@@ -49,8 +49,14 @@ void ft_on_tick(unsigned long tick)
 	if (!core_own)
 		return;
 
-	// Only spawn miners if we have enough money (cost is 100)
-	if (core_own->s_core.balance >= 100)
+	// Check miner limit: resource_amount * 0.75 > own_workers + opponent_workers
+	int resource_count = ft_count_resources();
+	int own_miners = ft_count_miners_own();
+	int opponent_miners = ft_count_miners_opponent();
+	double max_miners = resource_count * 0.75;
+	
+	// Only spawn miners if we have enough money and haven't hit the limit
+	if (core_own->s_core.balance >= 100 && (own_miners + opponent_miners) < max_miners)
 	{
 		core_action_createUnit(UNIT_MINER);
 	}
