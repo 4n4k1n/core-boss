@@ -41,49 +41,40 @@ void move_and_attack(t_obj *unit, t_pos target_pos)
 	}
 }
 
-int target_unit = 1;
-
 void ft_on_tick(unsigned long tick)
 {
 	(void)tick;
+	
+	t_obj *core_own = ft_get_core_own();
+	if (!core_own)
+		return;
 
-	// spawn new unit
-	if (ft_get_core_own() && ft_get_core_own()->s_core.balance >= core_get_unitConfig(target_unit)->cost)
+	// Only spawn miners if we have enough money (cost is 100)
+	if (core_own->s_core.balance >= 100)
 	{
-		core_action_createUnit(target_unit);
-		target_unit++;
-		if (target_unit > 1)
-			target_unit = 0;
+		core_action_createUnit(UNIT_MINER);
 	}
 
-	// move units
+	// Control all miners
 	t_obj **units = ft_get_units_own();
 	for (int i = 0; units && units[i]; i++)
 	{
-		t_obj *obj = units[i];
-		if (obj->state != STATE_ALIVE)
+		t_obj *miner = units[i];
+		if (miner->state != STATE_ALIVE || miner->s_unit.unit_type != UNIT_MINER)
 			continue;
 
-		switch ((int)obj->s_unit.unit_type)
+		// If miner has no money, go to nearest resource
+		if (miner->s_unit.balance <= 0)
 		{
-			case UNIT_WARRIOR:
-				t_obj *closest_opponent = ft_get_units_opponent_nearest(ft_get_core_own()->pos);
-				if (closest_opponent)
-					move_and_attack(obj, closest_opponent->pos);
-				else
-					move_and_attack(obj, ft_get_core_opponent()->pos);
-				break;
-
-			case UNIT_MINER:
-				t_obj *nearest_resource_or_money = ft_get_resource_money_nearest(obj->pos);
-				if (nearest_resource_or_money && obj->s_unit.balance <= 0)
-					move_and_attack(obj, nearest_resource_or_money->pos);
-				else
-				{
-					move_and_attack(obj, ft_get_core_own()->pos);
-					core_action_transferMoney(obj, ft_get_core_own()->pos, 9999999);
-				}
-				break;
+			t_obj *nearest_resource = ft_get_resource_money_nearest(miner->pos);
+			if (nearest_resource)
+				move_and_attack(miner, nearest_resource->pos);
+		}
+		// If miner has money, return to core and transfer it
+		else
+		{
+			move_and_attack(miner, core_own->pos);
+			core_action_transferMoney(miner, core_own->pos, miner->s_unit.balance);
 		}
 	}
 	free(units);
