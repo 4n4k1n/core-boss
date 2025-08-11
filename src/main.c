@@ -271,74 +271,77 @@ void ft_on_tick(unsigned long tick)
 			else if (unit->s_unit.unit_type == UNIT_CARRIER)
 			{
 				// Carriers first collect money from ground, then help miners
-				if (unit->s_unit.balance <= 0)
+				int carrier_max_balance = 10; // Carrier max balance capacity
+				t_obj *nearest_money = ft_get_money_nearest(unit->pos);
+				
+				// Check if carrier should return to core
+				bool should_return_money = ((int)unit->s_unit.balance >= carrier_max_balance) || 
+				                          (unit->s_unit.balance > 0 && !nearest_money);
+				
+				if (!should_return_money && nearest_money)
 				{
-					// First priority: collect money from the ground
-					t_obj *nearest_money = ft_get_money_nearest(unit->pos);
-					if (nearest_money)
-					{
-						move_and_attack(unit, nearest_money->pos);
-					}
-					else
-					{
-						// No money on ground, find a miner with money to collect from
-						// Assign different miners to different carriers to avoid conflicts
-						t_obj **all_units = ft_get_units_own();
-						t_obj *target_miner = NULL;
-						
-						if (all_units)
-						{
-							int carrier_index = 0;
-							int current_carrier = 0;
-							
-							// Find which carrier this is (0 or 1)
-							for (int k = 0; all_units[k]; k++)
-							{
-								if (all_units[k]->s_unit.unit_type == UNIT_CARRIER)
-								{
-									if (all_units[k]->id == unit->id)
-									{
-										carrier_index = current_carrier;
-										break;
-									}
-									current_carrier++;
-								}
-							}
-							
-							// Assign miner based on carrier index
-							int miner_count = 0;
-							for (int k = 0; all_units[k]; k++)
-							{
-								if (all_units[k]->s_unit.unit_type == UNIT_MINER && 
-									all_units[k]->s_unit.balance > 0)
-								{
-									if (miner_count == carrier_index)
-									{
-										target_miner = all_units[k];
-										break;
-									}
-									miner_count++;
-								}
-							}
-							free(all_units);
-						}
-						
-						if (target_miner)
-							move_and_attack(unit, target_miner->pos);
-						else
-						{
-							// No miners with money, help attack enemy core
-							t_obj *enemy_core = ft_get_core_opponent();
-							if (enemy_core)
-								move_and_attack(unit, enemy_core->pos);
-						}
-					}
+					// Keep collecting money from ground until full or no more money
+					move_and_attack(unit, nearest_money->pos);
+				}
+				else if (unit->s_unit.balance > 0)
+				{
+					// Return to core when full or no more money on ground
+					move_and_attack(unit, core_own->pos);
+					core_action_transferMoney(unit, core_own->pos, unit->s_unit.balance);
 				}
 				else
 				{
-					// Carrier has money, return to core
-					move_and_attack(unit, core_own->pos);
-					core_action_transferMoney(unit, core_own->pos, unit->s_unit.balance);
+					// No money on ground and carrier is empty, help miners
+					// Assign different miners to different carriers to avoid conflicts
+					t_obj **all_units = ft_get_units_own();
+					t_obj *target_miner = NULL;
+					
+					if (all_units)
+					{
+						int carrier_index = 0;
+						int current_carrier = 0;
+						
+						// Find which carrier this is (0 or 1)
+						for (int k = 0; all_units[k]; k++)
+						{
+							if (all_units[k]->s_unit.unit_type == UNIT_CARRIER)
+							{
+								if (all_units[k]->id == unit->id)
+								{
+									carrier_index = current_carrier;
+									break;
+								}
+								current_carrier++;
+							}
+						}
+						
+						// Assign miner based on carrier index
+						int miner_count = 0;
+						for (int k = 0; all_units[k]; k++)
+						{
+							if (all_units[k]->s_unit.unit_type == UNIT_MINER && 
+								all_units[k]->s_unit.balance > 0)
+							{
+								if (miner_count == carrier_index)
+								{
+									target_miner = all_units[k];
+									break;
+								}
+								miner_count++;
+							}
+						}
+						free(all_units);
+					}
+					
+					if (target_miner)
+						move_and_attack(unit, target_miner->pos);
+					else
+					{
+						// No miners with money, help attack enemy core
+						t_obj *enemy_core = ft_get_core_opponent();
+						if (enemy_core)
+							move_and_attack(unit, enemy_core->pos);
+					}
 				}
 			}
 			else if (unit->s_unit.unit_type == UNIT_WARRIOR)
