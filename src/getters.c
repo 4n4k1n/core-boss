@@ -17,6 +17,14 @@ static bool is_resource(const t_obj *obj)
 {
 	return (obj->type == OBJ_RESOURCE && obj->state == STATE_ALIVE);
 }
+static bool is_money(const t_obj *obj)
+{
+	return (obj->type == OBJ_MONEY && obj->state == STATE_ALIVE);
+}
+static bool is_resource_money(const t_obj *obj)
+{
+	return (is_resource(obj) || is_money(obj));
+}
 
 static bool is_unit(const t_obj *obj)
 {
@@ -47,6 +55,14 @@ t_obj *ft_get_core_opponent(void)
 t_obj *ft_get_resource_nearest(t_pos pos)
 {
 	return core_get_obj_customCondition_nearest(pos, is_resource);
+}
+t_obj *ft_get_money_nearest(t_pos pos)
+{
+	return core_get_obj_customCondition_nearest(pos, is_money);
+}
+t_obj *ft_get_resource_money_nearest(t_pos pos)
+{
+	return core_get_obj_customCondition_nearest(pos, is_resource_money);
 }
 
 t_obj **ft_get_units_own(void)
