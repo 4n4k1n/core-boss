@@ -11,6 +11,7 @@
 // Function declarations
 void ft_on_tick(unsigned long tick);
 void move_and_attack(t_obj *unit, t_pos target_pos);
+void move_and_attack_avoid_money(t_obj *unit, t_pos target_pos, bool avoid_money);
 t_pos try_alternative_move(t_pos unit_pos, int dx, int dy);
 bool should_attack_object(t_obj *unit, t_obj *target);
 void handle_unit_spawning(t_obj *core_own);
@@ -147,7 +148,7 @@ void control_miner(t_obj *miner, t_obj *core_own, t_obj **all_resources, bool *r
 		
 		if (miner->s_unit.balance <= 0 || !should_return)
 		{
-			move_and_attack(miner, assigned_resource->pos);
+			move_and_attack_avoid_money(miner, assigned_resource->pos, has_carrier);
 		}
 		else
 		{
@@ -196,7 +197,7 @@ void control_miner(t_obj *miner, t_obj *core_own, t_obj **all_resources, bool *r
 		// Attack enemies instead of waiting
 		t_obj *enemy_core = ft_get_core_opponent();
 		if (enemy_core)
-			move_and_attack(miner, enemy_core->pos);
+			move_and_attack_avoid_money(miner, enemy_core->pos, has_carrier);
 	}
 }
 
@@ -409,6 +410,77 @@ void move_and_attack(t_obj *unit, t_pos target_pos)
 			if (!alt_obj)
 			{
 				core_action_move(unit, alt_pos);
+			}
+			else if (next_pos_obj->type == OBJ_WALL)
+			{
+				core_action_attack(unit, next_pos); // Attack wall if can't go around
+			}
+			// Stay put if can't move around friendly unit
+		}
+		else
+		{
+			core_action_move(unit, next_pos);
+		}
+	}
+	else
+	{
+		core_action_move(unit, next_pos);
+	}
+}
+
+void move_and_attack_avoid_money(t_obj *unit, t_pos target_pos, bool avoid_money)
+{
+	// Check if unit is on cooldown - skip if it can't act
+	if (unit->s_unit.move_cooldown > 0)
+		return;
+		
+	int dx = target_pos.x - unit->pos.x;
+	int dy = target_pos.y - unit->pos.y;
+
+	t_pos next_pos = { unit->pos.x, unit->pos.y };
+	if (abs(dx) > abs(dy))
+	{
+		next_pos.x += (dx > 0) ? 1 : -1;
+	}
+	else
+	{
+		next_pos.y += (dy > 0) ? 1 : -1;
+	}
+
+	t_obj *next_pos_obj = core_get_obj_from_pos(next_pos);
+	if (next_pos_obj)
+	{
+		// If avoiding money and next position has money, try alternative path
+		if (avoid_money && next_pos_obj->type == OBJ_MONEY)
+		{
+			t_pos alt_pos = try_alternative_move(unit->pos, dx, dy);
+			t_obj *alt_obj = core_get_obj_from_pos(alt_pos);
+			
+			if (!alt_obj || (alt_obj->type != OBJ_MONEY))
+			{
+				core_action_move(unit, alt_pos);
+				return;
+			}
+			// If both paths have money, just stay put
+			return;
+		}
+		
+		if (should_attack_object(unit, next_pos_obj))
+		{
+			core_action_attack(unit, next_pos);
+		}
+		else if (next_pos_obj->type == OBJ_WALL || 
+		         (next_pos_obj->type == OBJ_UNIT && next_pos_obj->s_unit.team_id == game.my_team_id))
+		{
+			// Try alternative path for walls and friendly units
+			t_pos alt_pos = try_alternative_move(unit->pos, dx, dy);
+			t_obj *alt_obj = core_get_obj_from_pos(alt_pos);
+			
+			if (!alt_obj || (avoid_money && alt_obj->type == OBJ_MONEY))
+			{
+				if (!alt_obj)
+					core_action_move(unit, alt_pos);
+				// Stay put if alternative has money and we're avoiding it
 			}
 			else if (next_pos_obj->type == OBJ_WALL)
 			{
