@@ -31,10 +31,65 @@ void move_and_attack(t_obj *unit, t_pos target_pos)
 	t_obj *next_pos_obj = core_get_obj_from_pos(next_pos);
 	if (next_pos_obj)
 	{
+		// Check if it's money or resources - miners should mine them, others move to them
 		if (next_pos_obj->type == OBJ_MONEY)
+		{
 			core_action_move(unit, next_pos);
-		else
+		}
+		else if (next_pos_obj->type == OBJ_RESOURCE)
+		{
+			if (unit->s_unit.unit_type == UNIT_MINER)
+			{
+				core_action_attack(unit, next_pos); // Miners mine resources by attacking them
+			}
+			else
+			{
+				core_action_move(unit, next_pos); // Other units just move to resources
+			}
+		}
+		// Check if it's an enemy unit or core - attack these
+		else if (next_pos_obj->type == OBJ_UNIT && next_pos_obj->s_unit.team_id != game.my_team_id)
+		{
 			core_action_attack(unit, next_pos);
+		}
+		else if (next_pos_obj->type == OBJ_CORE && next_pos_obj->s_core.team_id != game.my_team_id)
+		{
+			core_action_attack(unit, next_pos);
+		}
+		// Try to walk around walls - try alternative directions
+		else if (next_pos_obj->type == OBJ_WALL)
+		{
+			// Try moving in the other primary direction first
+			t_pos alt_pos = { unit->pos.x, unit->pos.y };
+			if (abs(dx) > abs(dy))
+			{
+				// We were moving horizontally, try vertical
+				int step = (dy > 0) ? 1 : (dy < 0) ? -1 : (rand() % 2) ? 1 : -1;
+				alt_pos.y += step;
+			}
+			else
+			{
+				// We were moving vertically, try horizontal
+				int step = (dx > 0) ? 1 : (dx < 0) ? -1 : (rand() % 2) ? 1 : -1;
+				alt_pos.x += step;
+			}
+			
+			t_obj *alt_obj = core_get_obj_from_pos(alt_pos);
+			if (!alt_obj)
+			{
+				core_action_move(unit, alt_pos);
+			}
+			else
+			{
+				// If can't walk around, attack the wall
+				core_action_attack(unit, next_pos);
+			}
+		}
+		// Don't attack our own units/core - just move if possible
+		else
+		{
+			core_action_move(unit, next_pos);
+		}
 	}
 	else
 	{
@@ -50,14 +105,14 @@ void ft_on_tick(unsigned long tick)
 	if (!core_own)
 		return;
 
-	// Check miner limit: resource_amount * 0.6 > own_workers + opponent_workers
-	int resource_count = ft_count_resources();
+	// Check miner limit: resource_amount * 0.4 > own_workers + opponent_workers
+	// int resource_count = ft_count_resources();
 	int own_miners = ft_count_miners_own();
-	int opponent_miners = ft_count_miners_opponent();
-	double max_miners = resource_count * 0.4;
+	// int opponent_miners = ft_count_miners_opponent();
+	double max_miners = 5;
 	
 	// Spawn miners if we haven't hit the limit, otherwise spawn warriors
-	if (core_own->s_core.balance >= 100 && (own_miners + opponent_miners) < max_miners)
+	if (core_own->s_core.balance >= 100 && (own_miners < max_miners))
 	{
 		core_action_createUnit(UNIT_MINER);
 	}
@@ -121,10 +176,9 @@ void ft_on_tick(unsigned long tick)
 					resource_assigned[best_resource_idx] = true;
 					
 					// Check if miner should return to core
-					// Return when: 1) holding 70% of max balance, or 2) no resources left
-					// int miner_max_balance = 50; // Miner max balance capacity
-					bool should_return = (unit->s_unit.balance >= (int)(300) || 
-					                    (resource_count == 0));
+					// Return when: 1) holding balance >= 300, or 2) no resources left
+					bool should_return = (unit->s_unit.balance >= 300) || 
+					                    (resource_count == 0);
 					
 					if (unit->s_unit.balance <= 0 || !should_return)
 					{
