@@ -109,7 +109,7 @@ void ft_on_tick(unsigned long tick)
 	// int resource_count = ft_count_resources();
 	int own_miners = ft_count_miners_own();
 	// int opponent_miners = ft_count_miners_opponent();
-	double max_miners = 5;
+	double max_miners = 3;
 	
 	// Spawn miners if we haven't hit the limit, otherwise spawn warriors
 	if (core_own->s_core.balance >= 100 && (own_miners < max_miners))
