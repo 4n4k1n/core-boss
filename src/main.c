@@ -134,15 +134,49 @@ void ft_on_tick(unsigned long tick)
 	// int resource_count = ft_count_resources();
 	int own_miners = ft_count_miners_own();
 	// int opponent_miners = ft_count_miners_opponent();
-	double max_miners = 3;
+	// double max_miners = 3;
 	
-	// Spawn miners if we haven't hit the limit, otherwise spawn warriors
-	if (core_own->s_core.balance >= 100 && (own_miners < max_miners))
+	// Count different unit types
+	int own_carriers = 0;
+	int own_warriors = 0;
+	t_obj **units_for_count = ft_get_units_own();
+	if (units_for_count)
 	{
+		for (int i = 0; units_for_count[i]; i++)
+		{
+			if (units_for_count[i]->state == STATE_ALIVE)
+			{
+				if (units_for_count[i]->s_unit.unit_type == UNIT_CARRIER)
+					own_carriers++;
+				else if (units_for_count[i]->s_unit.unit_type == UNIT_WARRIOR)
+					own_warriors++;
+			}
+		}
+		free(units_for_count);
+	}
+	
+	// Check if miners have returned from first trip (core has more than starting money)
+	bool miners_returned = core_own->s_core.balance > 200; // Starting money is 200
+	
+	// Spawning sequence: 2 miners -> 2 carriers -> 1 more miner -> only warriors
+	if (own_miners < 2 && core_own->s_core.balance >= 100)
+	{
+		// First 2 miners
+		core_action_createUnit(UNIT_MINER);
+	}
+	else if (own_carriers < 2 && miners_returned && core_own->s_core.balance >= 200) // Carrier cost is 200
+	{
+		// 2 carriers after miners return
+		core_action_createUnit(UNIT_CARRIER);
+	}
+	else if (own_miners < 3 && own_carriers >= 2 && core_own->s_core.balance >= 100)
+	{
+		// 1 more miner after carriers
 		core_action_createUnit(UNIT_MINER);
 	}
 	else if (core_own->s_core.balance >= 150)  // Warrior cost is 150
 	{
+		// Only warriors after that
 		core_action_createUnit(UNIT_WARRIOR);
 	}
 
@@ -232,6 +266,51 @@ void ft_on_tick(unsigned long tick)
 						move_and_attack(unit, core_own->pos);
 						core_action_transferMoney(unit, core_own->pos, unit->s_unit.balance);
 					}
+				}
+			}
+			else if (unit->s_unit.unit_type == UNIT_CARRIER)
+			{
+				// Carriers help transport money between miners and core
+				if (unit->s_unit.balance <= 0)
+				{
+					// Find a miner with money to collect from
+					t_obj **all_units = ft_get_units_own();
+					t_obj *best_miner = NULL;
+					double best_distance = -1;
+					
+					if (all_units)
+					{
+						for (int k = 0; all_units[k]; k++)
+						{
+							if (all_units[k]->s_unit.unit_type == UNIT_MINER && 
+								all_units[k]->s_unit.balance > 0)
+							{
+								double distance = ft_calculate_distance(unit->pos, all_units[k]->pos);
+								if (best_distance < 0 || distance < best_distance)
+								{
+									best_distance = distance;
+									best_miner = all_units[k];
+								}
+							}
+						}
+						free(all_units);
+					}
+					
+					if (best_miner)
+						move_and_attack(unit, best_miner->pos);
+					else
+					{
+						// No miners with money, help attack enemy core
+						t_obj *enemy_core = ft_get_core_opponent();
+						if (enemy_core)
+							move_and_attack(unit, enemy_core->pos);
+					}
+				}
+				else
+				{
+					// Carrier has money, return to core
+					move_and_attack(unit, core_own->pos);
+					core_action_transferMoney(unit, core_own->pos, unit->s_unit.balance);
 				}
 			}
 			else if (unit->s_unit.unit_type == UNIT_WARRIOR)
