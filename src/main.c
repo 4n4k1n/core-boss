@@ -50,11 +50,11 @@ void ft_on_tick(unsigned long tick)
 	if (!core_own)
 		return;
 
-	// Check miner limit: resource_amount * 0.75 > own_workers + opponent_workers
+	// Check miner limit: resource_amount * 0.6 > own_workers + opponent_workers
 	int resource_count = ft_count_resources();
 	int own_miners = ft_count_miners_own();
 	int opponent_miners = ft_count_miners_opponent();
-	double max_miners = resource_count * 0.6;
+	double max_miners = resource_count * 0.4;
 	
 	// Spawn miners if we haven't hit the limit, otherwise spawn warriors
 	if (core_own->s_core.balance >= 100 && (own_miners + opponent_miners) < max_miners)
@@ -120,14 +120,20 @@ void ft_on_tick(unsigned long tick)
 				{
 					resource_assigned[best_resource_idx] = true;
 					
-					// If miner has no money, go to assigned resource
-					if (unit->s_unit.balance <= 0)
+					// Check if miner should return to core
+					// Return when: 1) holding 70% of max balance, or 2) no resources left
+					// int miner_max_balance = 50; // Miner max balance capacity
+					bool should_return = (unit->s_unit.balance >= (int)(300) || 
+					                    (resource_count == 0));
+					
+					if (unit->s_unit.balance <= 0 || !should_return)
 					{
+						// Go to assigned resource to mine
 						move_and_attack(unit, assigned_resource->pos);
 					}
-					// If miner has money, return to core and transfer it
 					else
 					{
+						// Return to core and transfer money
 						move_and_attack(unit, core_own->pos);
 						core_action_transferMoney(unit, core_own->pos, unit->s_unit.balance);
 					}
