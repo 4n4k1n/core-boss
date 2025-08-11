@@ -115,6 +115,11 @@ void control_all_units(t_obj *core_own)
 
 void control_miner(t_obj *miner, t_obj *core_own, t_obj **all_resources, bool *resource_assigned, int resource_count)
 {
+	// Check if there are any carriers alive
+	int own_miners, own_carriers, own_warriors;
+	count_unit_types(&own_miners, &own_carriers, &own_warriors);
+	bool has_carrier = (own_carriers > 0);
+	
 	t_obj *assigned_resource = find_assigned_resource_for_miner(miner, all_resources, resource_assigned, resource_count);
 	
 	if (assigned_resource)
@@ -144,39 +149,60 @@ void control_miner(t_obj *miner, t_obj *core_own, t_obj **all_resources, bool *r
 	}
 	else if (resource_count == 0)
 	{
-		// No resources left - attack enemy or deposit money
-		if (miner->s_unit.balance <= 0)
+		// No resources left
+		if (miner->s_unit.balance > 0)
 		{
+			// Deposit any remaining money
+			move_and_attack(miner, core_own->pos);
+			if (miner->s_unit.move_cooldown == 0)
+				core_action_transferMoney(miner, core_own->pos, miner->s_unit.balance);
+		}
+		else if (!has_carrier)
+		{
+			// If no carrier exists, collect money from ground
+			t_obj *nearest_money = ft_get_money_nearest(miner->pos);
+			if (nearest_money)
+			{
+				move_and_attack(miner, nearest_money->pos);
+			}
+			else
+			{
+				// No money available, attack enemy
+				t_obj *enemy_core = ft_get_core_opponent();
+				if (enemy_core)
+					move_and_attack(miner, enemy_core->pos);
+			}
+		}
+		else
+		{
+			// Carrier exists, attack enemy instead of collecting money
 			t_obj *enemy_core = ft_get_core_opponent();
 			if (enemy_core)
 				move_and_attack(miner, enemy_core->pos);
 		}
-		else
+	}
+	else if (!has_carrier)
+	{
+		// No assigned resource but resources exist, and no carrier - collect money
+		t_obj *nearest_money = ft_get_money_nearest(miner->pos);
+		if (nearest_money)
 		{
-			move_and_attack(miner, core_own->pos);
-			if (miner->s_unit.move_cooldown == 0)
-				core_action_transferMoney(miner, core_own->pos, miner->s_unit.balance);
+			move_and_attack(miner, nearest_money->pos);
 		}
 	}
 }
 
 void control_carrier(t_obj *carrier, t_obj *core_own)
 {
-	// First priority: collect low HP resources (1 HP)
-	t_obj *low_hp_resource = find_low_hp_resource(carrier);
+	// Carriers only collect money, return to core when no money available
 	t_obj *nearest_money = ft_get_money_nearest(carrier->pos);
 	
 	bool should_return = ((int)carrier->s_unit.balance >= CARRIER_MAX_BALANCE) || 
-	                    (carrier->s_unit.balance > 0 && !low_hp_resource && !nearest_money);
+	                    (carrier->s_unit.balance > 0 && !nearest_money);
 	
-	if (!should_return && low_hp_resource)
+	if (!should_return && nearest_money)
 	{
-		// Prioritize low HP resources first
-		move_and_attack(carrier, low_hp_resource->pos);
-	}
-	else if (!should_return && nearest_money)
-	{
-		// Then collect money from ground
+		// Collect money from ground
 		move_and_attack(carrier, nearest_money->pos);
 	}
 	else if (carrier->s_unit.balance > 0)
@@ -188,18 +214,8 @@ void control_carrier(t_obj *carrier, t_obj *core_own)
 	}
 	else
 	{
-		// Help miners or attack enemy
-		t_obj *target_miner = find_target_miner_for_carrier(carrier);
-		if (target_miner)
-		{
-			move_and_attack(carrier, target_miner->pos);
-		}
-		else
-		{
-			t_obj *enemy_core = ft_get_core_opponent();
-			if (enemy_core)
-				move_and_attack(carrier, enemy_core->pos);
-		}
+		// No money available, return to core
+		move_and_attack(carrier, core_own->pos);
 	}
 }
 
