@@ -1,14 +1,311 @@
 #include "bot.h"
-
 #include <time.h>
 #include <stdio.h>
 #include <stdlib.h>
 
-void ft_on_tick(unsigned long tick);
+// Constants
+#define STARTING_MONEY 200
+#define MINER_RETURN_THRESHOLD 300
+#define CARRIER_MAX_BALANCE 10
 
-int	main(int argc, char **argv)
+// Function declarations
+void ft_on_tick(unsigned long tick);
+void move_and_attack(t_obj *unit, t_pos target_pos);
+t_pos try_alternative_move(t_pos unit_pos, int dx, int dy);
+bool should_attack_object(t_obj *unit, t_obj *target);
+void handle_unit_spawning(t_obj *core_own);
+void control_all_units(t_obj *core_own);
+void control_miner(t_obj *miner, t_obj *core_own, t_obj **all_resources, bool *resource_assigned, int resource_count);
+void control_carrier(t_obj *carrier, t_obj *core_own);
+void control_warrior(t_obj *warrior);
+t_obj *find_assigned_resource_for_miner(t_obj *miner, t_obj **all_resources, bool *resource_assigned, int resource_count);
+t_obj *find_target_miner_for_carrier(t_obj *carrier);
+int get_carrier_index(t_obj *carrier);
+void count_unit_types(int *miners, int *carriers, int *warriors);
+
+int main(int argc, char **argv)
 {
 	return core_startGame("ur_mom", argc, argv, ft_on_tick, false);
+}
+
+void ft_on_tick(unsigned long tick)
+{
+	(void)tick;
+	
+	t_obj *core_own = ft_get_core_own();
+	if (!core_own)
+		return;
+
+	handle_unit_spawning(core_own);
+	control_all_units(core_own);
+}
+
+void handle_unit_spawning(t_obj *core_own)
+{
+	int own_miners, own_carriers, own_warriors;
+	count_unit_types(&own_miners, &own_carriers, &own_warriors);
+	
+	bool miners_returned = core_own->s_core.balance > STARTING_MONEY;
+	
+	// Spawning sequence: 2 miners -> 2 carriers -> 1 more miner -> only warriors
+	if (own_miners < 2 && core_own->s_core.balance >= 100)
+	{
+		core_action_createUnit(UNIT_MINER);
+	}
+	else if (own_carriers < 2 && miners_returned && core_own->s_core.balance >= 200)
+	{
+		core_action_createUnit(UNIT_CARRIER);
+	}
+	else if (own_miners < 3 && own_carriers >= 2 && core_own->s_core.balance >= 100)
+	{
+		core_action_createUnit(UNIT_MINER);
+	}
+	else if (core_own->s_core.balance >= 150)
+	{
+		core_action_createUnit(UNIT_WARRIOR);
+	}
+}
+
+void control_all_units(t_obj *core_own)
+{
+	t_obj **all_resources = ft_get_all_resources();
+	t_obj **units = ft_get_units_own();
+	
+	if (!all_resources || !units)
+	{
+		if (all_resources) free(all_resources);
+		if (units) free(units);
+		return;
+	}
+
+	// Count resources
+	int resource_count = 0;
+	for (int i = 0; all_resources[i]; i++)
+		resource_count++;
+	
+	// Create resource assignment tracking
+	bool *resource_assigned = calloc(resource_count, sizeof(bool));
+	
+	// Control each unit based on its type
+	for (int i = 0; units[i]; i++)
+	{
+		t_obj *unit = units[i];
+		if (unit->state != STATE_ALIVE)
+			continue;
+		
+		switch (unit->s_unit.unit_type)
+		{
+			case UNIT_MINER:
+				control_miner(unit, core_own, all_resources, resource_assigned, resource_count);
+				break;
+			case UNIT_CARRIER:
+				control_carrier(unit, core_own);
+				break;
+			case UNIT_WARRIOR:
+				control_warrior(unit);
+				break;
+		}
+	}
+	
+	free(resource_assigned);
+	free(all_resources);
+	free(units);
+}
+
+void control_miner(t_obj *miner, t_obj *core_own, t_obj **all_resources, bool *resource_assigned, int resource_count)
+{
+	t_obj *assigned_resource = find_assigned_resource_for_miner(miner, all_resources, resource_assigned, resource_count);
+	
+	if (assigned_resource)
+	{
+		// Mark resource as assigned
+		for (int j = 0; j < resource_count; j++)
+		{
+			if (all_resources[j]->id == assigned_resource->id)
+			{
+				resource_assigned[j] = true;
+				break;
+			}
+		}
+		
+		bool should_return = (miner->s_unit.balance >= MINER_RETURN_THRESHOLD) || (resource_count == 0);
+		
+		if (miner->s_unit.balance <= 0 || !should_return)
+		{
+			move_and_attack(miner, assigned_resource->pos);
+		}
+		else
+		{
+			move_and_attack(miner, core_own->pos);
+			core_action_transferMoney(miner, core_own->pos, miner->s_unit.balance);
+		}
+	}
+	else if (resource_count == 0)
+	{
+		// No resources left - attack enemy or deposit money
+		if (miner->s_unit.balance <= 0)
+		{
+			t_obj *enemy_core = ft_get_core_opponent();
+			if (enemy_core)
+				move_and_attack(miner, enemy_core->pos);
+		}
+		else
+		{
+			move_and_attack(miner, core_own->pos);
+			core_action_transferMoney(miner, core_own->pos, miner->s_unit.balance);
+		}
+	}
+}
+
+void control_carrier(t_obj *carrier, t_obj *core_own)
+{
+	t_obj *nearest_money = ft_get_money_nearest(carrier->pos);
+	
+	bool should_return = ((int)carrier->s_unit.balance >= CARRIER_MAX_BALANCE) || 
+	                    (carrier->s_unit.balance > 0 && !nearest_money);
+	
+	if (!should_return && nearest_money)
+	{
+		// Collect money from ground
+		move_and_attack(carrier, nearest_money->pos);
+	}
+	else if (carrier->s_unit.balance > 0)
+	{
+		// Return to core to deposit
+		move_and_attack(carrier, core_own->pos);
+		core_action_transferMoney(carrier, core_own->pos, carrier->s_unit.balance);
+	}
+	else
+	{
+		// Help miners or attack enemy
+		t_obj *target_miner = find_target_miner_for_carrier(carrier);
+		if (target_miner)
+		{
+			move_and_attack(carrier, target_miner->pos);
+		}
+		else
+		{
+			t_obj *enemy_core = ft_get_core_opponent();
+			if (enemy_core)
+				move_and_attack(carrier, enemy_core->pos);
+		}
+	}
+}
+
+void control_warrior(t_obj *warrior)
+{
+	t_obj *closest_opponent = ft_get_units_opponent_nearest(warrior->pos);
+	if (closest_opponent)
+	{
+		move_and_attack(warrior, closest_opponent->pos);
+	}
+	else
+	{
+		t_obj *enemy_core = ft_get_core_opponent();
+		if (enemy_core)
+			move_and_attack(warrior, enemy_core->pos);
+	}
+}
+
+t_obj *find_assigned_resource_for_miner(t_obj *miner, t_obj **all_resources, bool *resource_assigned, int resource_count)
+{
+	t_obj *best_resource = NULL;
+	double best_distance = -1;
+	// int best_idx = -1;
+	
+	for (int j = 0; j < resource_count; j++)
+	{
+		if (resource_assigned[j])
+			continue;
+			
+		double distance = ft_calculate_distance(miner->pos, all_resources[j]->pos);
+		if (best_distance < 0 || distance < best_distance)
+		{
+			best_distance = distance;
+			best_resource = all_resources[j];
+			// best_idx = j;
+		}
+	}
+	
+	return best_resource;
+}
+
+t_obj *find_target_miner_for_carrier(t_obj *carrier)
+{
+	t_obj **all_units = ft_get_units_own();
+	t_obj *target_miner = NULL;
+	
+	if (!all_units)
+		return NULL;
+	
+	int carrier_index = get_carrier_index(carrier);
+	int miner_count = 0;
+	
+	for (int k = 0; all_units[k]; k++)
+	{
+		if (all_units[k]->s_unit.unit_type == UNIT_MINER && all_units[k]->s_unit.balance > 0)
+		{
+			if (miner_count == carrier_index)
+			{
+				target_miner = all_units[k];
+				break;
+			}
+			miner_count++;
+		}
+	}
+	
+	free(all_units);
+	return target_miner;
+}
+
+int get_carrier_index(t_obj *carrier)
+{
+	t_obj **all_units = ft_get_units_own();
+	int carrier_index = 0;
+	int current_carrier = 0;
+	
+	if (!all_units)
+		return 0;
+	
+	for (int k = 0; all_units[k]; k++)
+	{
+		if (all_units[k]->s_unit.unit_type == UNIT_CARRIER)
+		{
+			if (all_units[k]->id == carrier->id)
+			{
+				carrier_index = current_carrier;
+				break;
+			}
+			current_carrier++;
+		}
+	}
+	
+	free(all_units);
+	return carrier_index;
+}
+
+void count_unit_types(int *miners, int *carriers, int *warriors)
+{
+	*miners = ft_count_miners_own();
+	*carriers = 0;
+	*warriors = 0;
+	
+	t_obj **units = ft_get_units_own();
+	if (!units)
+		return;
+	
+	for (int i = 0; units[i]; i++)
+	{
+		if (units[i]->state == STATE_ALIVE)
+		{
+			if (units[i]->s_unit.unit_type == UNIT_CARRIER)
+				(*carriers)++;
+			else if (units[i]->s_unit.unit_type == UNIT_WARRIOR)
+				(*warriors)++;
+		}
+	}
+	
+	free(units);
 }
 
 void move_and_attack(t_obj *unit, t_pos target_pos)
@@ -19,98 +316,37 @@ void move_and_attack(t_obj *unit, t_pos target_pos)
 	t_pos next_pos = { unit->pos.x, unit->pos.y };
 	if (abs(dx) > abs(dy))
 	{
-		int step = (dx > 0) ? 1 : -1;
-		next_pos.x += step;
+		next_pos.x += (dx > 0) ? 1 : -1;
 	}
 	else
 	{
-		int step = (dy > 0) ? 1 : -1;
-		next_pos.y += step;
+		next_pos.y += (dy > 0) ? 1 : -1;
 	}
 
 	t_obj *next_pos_obj = core_get_obj_from_pos(next_pos);
 	if (next_pos_obj)
 	{
-		// Check if it's money or resources - miners should mine them, others move to them
-		if (next_pos_obj->type == OBJ_MONEY)
-		{
-			core_action_move(unit, next_pos);
-		}
-		else if (next_pos_obj->type == OBJ_RESOURCE)
-		{
-			if (unit->s_unit.unit_type == UNIT_MINER)
-			{
-				core_action_attack(unit, next_pos); // Miners mine resources by attacking them
-			}
-			else
-			{
-				core_action_move(unit, next_pos); // Other units just move to resources
-			}
-		}
-		// Check if it's an enemy unit or core - attack these
-		else if (next_pos_obj->type == OBJ_UNIT && next_pos_obj->s_unit.team_id != game.my_team_id)
+		if (should_attack_object(unit, next_pos_obj))
 		{
 			core_action_attack(unit, next_pos);
 		}
-		else if (next_pos_obj->type == OBJ_CORE && next_pos_obj->s_core.team_id != game.my_team_id)
+		else if (next_pos_obj->type == OBJ_WALL || 
+		         (next_pos_obj->type == OBJ_UNIT && next_pos_obj->s_unit.team_id == game.my_team_id))
 		{
-			core_action_attack(unit, next_pos);
-		}
-		// Try to walk around walls - try alternative directions
-		else if (next_pos_obj->type == OBJ_WALL)
-		{
-			// Try moving in the other primary direction first
-			t_pos alt_pos = { unit->pos.x, unit->pos.y };
-			if (abs(dx) > abs(dy))
-			{
-				// We were moving horizontally, try vertical
-				int step = (dy > 0) ? 1 : (dy < 0) ? -1 : (rand() % 2) ? 1 : -1;
-				alt_pos.y += step;
-			}
-			else
-			{
-				// We were moving vertically, try horizontal
-				int step = (dx > 0) ? 1 : (dx < 0) ? -1 : (rand() % 2) ? 1 : -1;
-				alt_pos.x += step;
-			}
-			
+			// Try alternative path for walls and friendly units
+			t_pos alt_pos = try_alternative_move(unit->pos, dx, dy);
 			t_obj *alt_obj = core_get_obj_from_pos(alt_pos);
+			
 			if (!alt_obj)
 			{
 				core_action_move(unit, alt_pos);
 			}
-			else
+			else if (next_pos_obj->type == OBJ_WALL)
 			{
-				// If can't walk around, attack the wall
-				core_action_attack(unit, next_pos);
+				core_action_attack(unit, next_pos); // Attack wall if can't go around
 			}
+			// Stay put if can't move around friendly unit
 		}
-		// Handle our own units - try to move around them to avoid deadlocks
-		else if (next_pos_obj->type == OBJ_UNIT && next_pos_obj->s_unit.team_id == game.my_team_id)
-		{
-			// Try to find alternative path around friendly unit
-			t_pos alt_pos = { unit->pos.x, unit->pos.y };
-			if (abs(dx) > abs(dy))
-			{
-				// We were moving horizontally, try vertical
-				int step = (dy > 0) ? 1 : (dy < 0) ? -1 : (rand() % 2) ? 1 : -1;
-				alt_pos.y += step;
-			}
-			else
-			{
-				// We were moving vertically, try horizontal
-				int step = (dx > 0) ? 1 : (dx < 0) ? -1 : (rand() % 2) ? 1 : -1;
-				alt_pos.x += step;
-			}
-			
-			t_obj *alt_obj = core_get_obj_from_pos(alt_pos);
-			if (!alt_obj)
-			{
-				core_action_move(unit, alt_pos);
-			}
-			// If can't move around, stay put (don't attack friendly unit)
-		}
-		// Don't attack our own core - just move if possible
 		else
 		{
 			core_action_move(unit, next_pos);
@@ -122,246 +358,41 @@ void move_and_attack(t_obj *unit, t_pos target_pos)
 	}
 }
 
-void ft_on_tick(unsigned long tick)
+t_pos try_alternative_move(t_pos unit_pos, int dx, int dy)
 {
-	(void)tick;
+	t_pos alt_pos = unit_pos;
 	
-	t_obj *core_own = ft_get_core_own();
-	if (!core_own)
-		return;
+	if (abs(dx) > abs(dy))
+	{
+		// Moving horizontally, try vertical
+		int step = (dy > 0) ? 1 : (dy < 0) ? -1 : (rand() % 2) ? 1 : -1;
+		alt_pos.y += step;
+	}
+	else
+	{
+		// Moving vertically, try horizontal
+		int step = (dx > 0) ? 1 : (dx < 0) ? -1 : (rand() % 2) ? 1 : -1;
+		alt_pos.x += step;
+	}
+	
+	return alt_pos;
+}
 
-	// Check miner limit: resource_amount * 0.4 > own_workers + opponent_workers
-	// int resource_count = ft_count_resources();
-	int own_miners = ft_count_miners_own();
-	// int opponent_miners = ft_count_miners_opponent();
-	// double max_miners = 3;
+bool should_attack_object(t_obj *unit, t_obj *target)
+{
+	// Money - always move
+	if (target->type == OBJ_MONEY)
+		return false;
 	
-	// Count different unit types
-	int own_carriers = 0;
-	int own_warriors = 0;
-	t_obj **units_for_count = ft_get_units_own();
-	if (units_for_count)
-	{
-		for (int i = 0; units_for_count[i]; i++)
-		{
-			if (units_for_count[i]->state == STATE_ALIVE)
-			{
-				if (units_for_count[i]->s_unit.unit_type == UNIT_CARRIER)
-					own_carriers++;
-				else if (units_for_count[i]->s_unit.unit_type == UNIT_WARRIOR)
-					own_warriors++;
-			}
-		}
-		free(units_for_count);
-	}
+	// Resources - miners mine them, others move
+	if (target->type == OBJ_RESOURCE)
+		return (unit->s_unit.unit_type == UNIT_MINER);
 	
-	// Check if miners have returned from first trip (core has more than starting money)
-	bool miners_returned = core_own->s_core.balance > 200; // Starting money is 200
+	// Enemy units and cores - attack
+	if (target->type == OBJ_UNIT && target->s_unit.team_id != game.my_team_id)
+		return true;
+	if (target->type == OBJ_CORE && target->s_core.team_id != game.my_team_id)
+		return true;
 	
-	// Spawning sequence: 2 miners -> 2 carriers -> 1 more miner -> only warriors
-	if (own_miners < 2 && core_own->s_core.balance >= 100)
-	{
-		// First 2 miners
-		core_action_createUnit(UNIT_MINER);
-	}
-	else if (own_carriers < 2 && miners_returned && core_own->s_core.balance >= 200) // Carrier cost is 200
-	{
-		// 2 carriers after miners return
-		core_action_createUnit(UNIT_CARRIER);
-	}
-	else if (own_miners < 3 && own_carriers >= 2 && core_own->s_core.balance >= 100)
-	{
-		// 1 more miner after carriers
-		core_action_createUnit(UNIT_MINER);
-	}
-	else if (core_own->s_core.balance >= 150)  // Warrior cost is 150
-	{
-		// Only warriors after that
-		core_action_createUnit(UNIT_WARRIOR);
-	}
-
-	// Get all resources and assign miners 1:1
-	t_obj **all_resources = ft_get_all_resources();
-	t_obj **units = ft_get_units_own();
-	
-	// Create assignment array - each miner gets assigned to exactly one resource
-	if (all_resources && units)
-	{
-		// Count miners
-		int miner_count = 0;
-		for (int i = 0; units[i]; i++)
-		{
-			if (units[i]->state == STATE_ALIVE && units[i]->s_unit.unit_type == UNIT_MINER)
-				miner_count++;
-		}
-		
-		// Count resources
-		int resource_count = 0;
-		for (int i = 0; all_resources[i]; i++)
-			resource_count++;
-		
-		// Assign each miner to the nearest available resource
-		bool *resource_assigned = calloc(resource_count, sizeof(bool));
-		
-		for (int i = 0; units && units[i]; i++)
-		{
-			t_obj *unit = units[i];
-			if (unit->state != STATE_ALIVE)
-				continue;
-			
-			if (unit->s_unit.unit_type == UNIT_MINER)
-			{
-				t_obj *assigned_resource = NULL;
-				double best_distance = -1;
-				int best_resource_idx = -1;
-				
-				// Find nearest unassigned resource
-				for (int j = 0; j < resource_count; j++)
-				{
-					if (resource_assigned[j])
-						continue;
-						
-					double distance = ft_calculate_distance(unit->pos, all_resources[j]->pos);
-					if (best_distance < 0 || distance < best_distance)
-					{
-						best_distance = distance;
-						assigned_resource = all_resources[j];
-						best_resource_idx = j;
-					}
-				}
-				
-				if (assigned_resource)
-				{
-					resource_assigned[best_resource_idx] = true;
-					
-					// Check if miner should return to core
-					// Return when: 1) holding balance >= 300, or 2) no resources left
-					bool should_return = (unit->s_unit.balance >= 300) || 
-					                    (resource_count == 0);
-					
-					if (unit->s_unit.balance <= 0 || !should_return)
-					{
-						// Go to assigned resource to mine
-						move_and_attack(unit, assigned_resource->pos);
-					}
-					else
-					{
-						// Return to core and transfer money
-						move_and_attack(unit, core_own->pos);
-						core_action_transferMoney(unit, core_own->pos, unit->s_unit.balance);
-					}
-				}
-				else if (resource_count == 0)
-				{
-					// No resources left and no money to deposit - attack enemy core
-					if (unit->s_unit.balance <= 0)
-					{
-						t_obj *enemy_core = ft_get_core_opponent();
-						if (enemy_core)
-							move_and_attack(unit, enemy_core->pos);
-					}
-					else
-					{
-						// Still have money to deposit first
-						move_and_attack(unit, core_own->pos);
-						core_action_transferMoney(unit, core_own->pos, unit->s_unit.balance);
-					}
-				}
-			}
-			else if (unit->s_unit.unit_type == UNIT_CARRIER)
-			{
-				// Carriers first collect money from ground, then help miners
-				int carrier_max_balance = 10; // Carrier max balance capacity
-				t_obj *nearest_money = ft_get_money_nearest(unit->pos);
-				
-				// Check if carrier should return to core
-				bool should_return_money = ((int)unit->s_unit.balance >= carrier_max_balance) || 
-				                          (unit->s_unit.balance > 0 && !nearest_money);
-				
-				if (!should_return_money && nearest_money)
-				{
-					// Keep collecting money from ground until full or no more money
-					move_and_attack(unit, nearest_money->pos);
-				}
-				else if (unit->s_unit.balance > 0)
-				{
-					// Return to core when full or no more money on ground
-					move_and_attack(unit, core_own->pos);
-					core_action_transferMoney(unit, core_own->pos, unit->s_unit.balance);
-				}
-				else
-				{
-					// No money on ground and carrier is empty, help miners
-					// Assign different miners to different carriers to avoid conflicts
-					t_obj **all_units = ft_get_units_own();
-					t_obj *target_miner = NULL;
-					
-					if (all_units)
-					{
-						int carrier_index = 0;
-						int current_carrier = 0;
-						
-						// Find which carrier this is (0 or 1)
-						for (int k = 0; all_units[k]; k++)
-						{
-							if (all_units[k]->s_unit.unit_type == UNIT_CARRIER)
-							{
-								if (all_units[k]->id == unit->id)
-								{
-									carrier_index = current_carrier;
-									break;
-								}
-								current_carrier++;
-							}
-						}
-						
-						// Assign miner based on carrier index
-						int miner_count = 0;
-						for (int k = 0; all_units[k]; k++)
-						{
-							if (all_units[k]->s_unit.unit_type == UNIT_MINER && 
-								all_units[k]->s_unit.balance > 0)
-							{
-								if (miner_count == carrier_index)
-								{
-									target_miner = all_units[k];
-									break;
-								}
-								miner_count++;
-							}
-						}
-						free(all_units);
-					}
-					
-					if (target_miner)
-						move_and_attack(unit, target_miner->pos);
-					else
-					{
-						// No miners with money, help attack enemy core
-						t_obj *enemy_core = ft_get_core_opponent();
-						if (enemy_core)
-							move_and_attack(unit, enemy_core->pos);
-					}
-				}
-			}
-			else if (unit->s_unit.unit_type == UNIT_WARRIOR)
-			{
-				// Warriors attack nearest enemy unit, or enemy core if no units
-				t_obj *closest_opponent = ft_get_units_opponent_nearest(unit->pos);
-				if (closest_opponent)
-					move_and_attack(unit, closest_opponent->pos);
-				else
-				{
-					t_obj *enemy_core = ft_get_core_opponent();
-					if (enemy_core)
-						move_and_attack(unit, enemy_core->pos);
-				}
-			}
-		}
-		
-		free(resource_assigned);
-	}
-	
-	if (all_resources) free(all_resources);
-	if (units) free(units);
+	return false;
 }
