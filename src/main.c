@@ -6,7 +6,7 @@
 // Constants
 #define STARTING_MONEY 200
 #define MINER_RETURN_THRESHOLD 300
-#define CARRIER_MAX_BALANCE 10
+#define CARRIER_MAX_BALANCE 100
 
 // Function declarations
 void ft_on_tick(unsigned long tick);
@@ -45,12 +45,20 @@ void ft_on_tick(unsigned long tick)
 void handle_unit_spawning(t_obj *core_own)
 {
 	int own_miners, own_carriers, own_warriors;
-	count_unit_types(&own_miners, &own_carriers, &own_warriors);
-	
+	count_unit_types(&own_miners, &own_carriers, &own_warriors);	
 	bool miners_returned = core_own->s_core.balance > STARTING_MONEY;
 	
-	// Spawning sequence: 2 miners -> 2 carriers -> 1 more miner -> only warriors
-	if (own_miners < 2 && core_own->s_core.balance >= 100)
+	// New strategy: Carrier first -> Worker -> then normal sequence
+	if (own_carriers == 0 && core_own->s_core.balance >= 200)
+	{
+		core_action_createUnit(UNIT_CARRIER);
+	}
+	else if (own_miners == 0 && own_carriers >= 1 && core_own->s_core.balance >= 100)
+	{
+		core_action_createUnit(UNIT_MINER);
+	}
+	// After first carrier + miner, continue normal spawning
+	else if (own_miners < 2 && core_own->s_core.balance >= 100)
 	{
 		core_action_createUnit(UNIT_MINER);
 	}
