@@ -217,6 +217,22 @@ void ft_on_tick(unsigned long tick)
 						core_action_transferMoney(unit, core_own->pos, unit->s_unit.balance);
 					}
 				}
+				else if (resource_count == 0)
+				{
+					// No resources left and no money to deposit - attack enemy core
+					if (unit->s_unit.balance <= 0)
+					{
+						t_obj *enemy_core = ft_get_core_opponent();
+						if (enemy_core)
+							move_and_attack(unit, enemy_core->pos);
+					}
+					else
+					{
+						// Still have money to deposit first
+						move_and_attack(unit, core_own->pos);
+						core_action_transferMoney(unit, core_own->pos, unit->s_unit.balance);
+					}
+				}
 			}
 			else if (unit->s_unit.unit_type == UNIT_WARRIOR)
 			{
