@@ -190,6 +190,14 @@ void control_miner(t_obj *miner, t_obj *core_own, t_obj **all_resources, bool *r
 				move_and_attack(miner, enemy_core->pos);
 		}
 	}
+	else
+	{
+		// Resources exist but none assigned (all taken by other miners)
+		// Attack enemies instead of waiting
+		t_obj *enemy_core = ft_get_core_opponent();
+		if (enemy_core)
+			move_and_attack(miner, enemy_core->pos);
+	}
 }
 
 void control_carrier(t_obj *carrier, t_obj *core_own)
