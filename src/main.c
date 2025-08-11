@@ -20,6 +20,7 @@ void control_carrier(t_obj *carrier, t_obj *core_own);
 void control_warrior(t_obj *warrior);
 t_obj *find_assigned_resource_for_miner(t_obj *miner, t_obj **all_resources, bool *resource_assigned, int resource_count);
 t_obj *find_target_miner_for_carrier(t_obj *carrier);
+t_obj *find_low_hp_resource(t_obj *carrier);
 int get_carrier_index(t_obj *carrier);
 void count_unit_types(int *miners, int *carriers, int *warriors);
 
@@ -159,14 +160,21 @@ void control_miner(t_obj *miner, t_obj *core_own, t_obj **all_resources, bool *r
 
 void control_carrier(t_obj *carrier, t_obj *core_own)
 {
+	// First priority: collect low HP resources (1 HP)
+	t_obj *low_hp_resource = find_low_hp_resource(carrier);
 	t_obj *nearest_money = ft_get_money_nearest(carrier->pos);
 	
 	bool should_return = ((int)carrier->s_unit.balance >= CARRIER_MAX_BALANCE) || 
-	                    (carrier->s_unit.balance > 0 && !nearest_money);
+	                    (carrier->s_unit.balance > 0 && !low_hp_resource && !nearest_money);
 	
-	if (!should_return && nearest_money)
+	if (!should_return && low_hp_resource)
 	{
-		// Collect money from ground
+		// Prioritize low HP resources first
+		move_and_attack(carrier, low_hp_resource->pos);
+	}
+	else if (!should_return && nearest_money)
+	{
+		// Then collect money from ground
 		move_and_attack(carrier, nearest_money->pos);
 	}
 	else if (carrier->s_unit.balance > 0)
@@ -256,6 +264,36 @@ t_obj *find_target_miner_for_carrier(t_obj *carrier)
 	
 	free(all_units);
 	return target_miner;
+}
+
+t_obj *find_low_hp_resource(t_obj *carrier)
+{
+	t_obj **all_resources = ft_get_all_resources();
+	t_obj *best_resource = NULL;
+	double best_distance = -1;
+	
+	if (!all_resources)
+		return NULL;
+	
+	for (int i = 0; all_resources[i]; i++)
+	{
+		t_obj *resource = all_resources[i];
+		
+		// Only look for resources with 1 HP
+		if (resource->hp == 1)
+		{
+			double distance = ft_calculate_distance(carrier->pos, resource->pos);
+			if (best_distance < 0 || distance < best_distance)
+			{
+				// printf("FOUND!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n");
+				best_distance = distance;
+				best_resource = resource;
+			}
+		}
+	}
+	
+	free(all_resources);
+	return best_resource;
 }
 
 int get_carrier_index(t_obj *carrier)
