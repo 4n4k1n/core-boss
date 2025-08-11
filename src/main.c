@@ -19,7 +19,7 @@ void control_all_units(t_obj *core_own);
 void control_miner(t_obj *miner, t_obj *core_own, t_obj **all_resources, bool *resource_assigned, int resource_count);
 void control_carrier(t_obj *carrier, t_obj *core_own);
 void control_warrior(t_obj *warrior);
-t_obj *find_assigned_resource_for_miner(t_obj *miner, t_obj **all_resources, bool *resource_assigned, int resource_count);
+t_obj *find_assigned_resource_for_miner(t_obj *miner, t_obj *core_own, t_obj **all_resources, bool *resource_assigned, int resource_count, bool has_carrier);
 t_obj *find_target_miner_for_carrier(t_obj *carrier);
 t_obj *find_low_hp_resource(t_obj *carrier);
 int get_carrier_index(t_obj *carrier);
@@ -130,7 +130,7 @@ void control_miner(t_obj *miner, t_obj *core_own, t_obj **all_resources, bool *r
 		return;
 	}
 	
-	t_obj *assigned_resource = find_assigned_resource_for_miner(miner, all_resources, resource_assigned, resource_count);
+	t_obj *assigned_resource = find_assigned_resource_for_miner(miner, core_own, all_resources, resource_assigned, resource_count, has_carrier);
 	
 	if (assigned_resource)
 	{
@@ -243,23 +243,28 @@ void control_warrior(t_obj *warrior)
 	}
 }
 
-t_obj *find_assigned_resource_for_miner(t_obj *miner, t_obj **all_resources, bool *resource_assigned, int resource_count)
+t_obj *find_assigned_resource_for_miner(t_obj *miner, t_obj *core_own, t_obj **all_resources, bool *resource_assigned, int resource_count, bool has_carrier)
 {
 	t_obj *best_resource = NULL;
 	double best_distance = -1;
-	// int best_idx = -1;
 	
 	for (int j = 0; j < resource_count; j++)
 	{
 		if (resource_assigned[j])
 			continue;
 			
-		double distance = ft_calculate_distance(miner->pos, all_resources[j]->pos);
+		// If no carrier, prioritize resources closest to core
+		// If carrier exists, prioritize resources closest to miner
+		double distance;
+		if (!has_carrier)
+			distance = ft_calculate_distance(core_own->pos, all_resources[j]->pos);
+		else
+			distance = ft_calculate_distance(miner->pos, all_resources[j]->pos);
+		
 		if (best_distance < 0 || distance < best_distance)
 		{
 			best_distance = distance;
 			best_resource = all_resources[j];
-			// best_idx = j;
 		}
 	}
 	
