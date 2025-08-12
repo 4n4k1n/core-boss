@@ -404,13 +404,14 @@ void move_and_attack(t_obj *unit, t_pos target_pos)
 			core_action_attack(unit, next_pos);
 		}
 		else if (next_pos_obj->type == OBJ_WALL || 
-		         (next_pos_obj->type == OBJ_UNIT && next_pos_obj->s_unit.team_id == game.my_team_id))
+		         (next_pos_obj->type == OBJ_UNIT && next_pos_obj->s_unit.team_id == game.my_team_id) ||
+		         (next_pos_obj->type == OBJ_RESOURCE && unit->s_unit.unit_type != UNIT_MINER))
 		{
-			// Try alternative path for walls and friendly units
+			// Try alternative path for walls, friendly units, and resources (for non-miners)
 			t_pos alt_pos = try_alternative_move(unit->pos, dx, dy);
-			t_obj *alt_obj = core_get_obj_from_pos(alt_pos);
 			
-			if (!alt_obj)
+			// If alternative found a valid move, use it
+			if (alt_pos.x != unit->pos.x || alt_pos.y != unit->pos.y)
 			{
 				core_action_move(unit, alt_pos);
 			}
@@ -418,7 +419,7 @@ void move_and_attack(t_obj *unit, t_pos target_pos)
 			{
 				core_action_attack(unit, next_pos); // Attack wall if can't go around
 			}
-			// Stay put if can't move around friendly unit
+			// Stay put if can't find alternative and can't attack
 		}
 		else
 		{
@@ -473,23 +474,27 @@ void move_and_attack_avoid_money(t_obj *unit, t_pos target_pos, bool avoid_money
 			core_action_attack(unit, next_pos);
 		}
 		else if (next_pos_obj->type == OBJ_WALL || 
-		         (next_pos_obj->type == OBJ_UNIT && next_pos_obj->s_unit.team_id == game.my_team_id))
+		         (next_pos_obj->type == OBJ_UNIT && next_pos_obj->s_unit.team_id == game.my_team_id) ||
+		         (next_pos_obj->type == OBJ_RESOURCE && unit->s_unit.unit_type != UNIT_MINER))
 		{
-			// Try alternative path for walls and friendly units
+			// Try alternative path for walls, friendly units, and resources (for non-miners)
 			t_pos alt_pos = try_alternative_move(unit->pos, dx, dy);
-			t_obj *alt_obj = core_get_obj_from_pos(alt_pos);
 			
-			if (!alt_obj || (avoid_money && alt_obj->type == OBJ_MONEY))
+			// If alternative found a valid move and doesn't conflict with money avoidance
+			if (alt_pos.x != unit->pos.x || alt_pos.y != unit->pos.y)
 			{
-				if (!alt_obj)
+				t_obj *alt_obj = core_get_obj_from_pos(alt_pos);
+				if (!alt_obj || !(avoid_money && alt_obj->type == OBJ_MONEY))
+				{
 					core_action_move(unit, alt_pos);
+				}
 				// Stay put if alternative has money and we're avoiding it
 			}
 			else if (next_pos_obj->type == OBJ_WALL)
 			{
 				core_action_attack(unit, next_pos); // Attack wall if can't go around
 			}
-			// Stay put if can't move around friendly unit
+			// Stay put if can't find alternative and can't attack
 		}
 		else
 		{
@@ -502,24 +507,75 @@ void move_and_attack_avoid_money(t_obj *unit, t_pos target_pos, bool avoid_money
 	}
 }
 
+bool is_valid_position(int x, int y)
+{
+	return (x >= 0 && x < 20 && y >= 0 && y < 20);
+}
+
 t_pos try_alternative_move(t_pos unit_pos, int dx, int dy)
 {
-	t_pos alt_pos = unit_pos;
+	// Try multiple alternative directions when blocked
+	t_pos alternatives[6];
+	int alt_count = 0;
 	
+	// Add perpendicular directions first
 	if (abs(dx) > abs(dy))
 	{
-		// Moving horizontally, try vertical
-		int step = (dy > 0) ? 1 : (dy < 0) ? -1 : (rand() % 2) ? 1 : -1;
-		alt_pos.y += step;
+		// Moving horizontally, try vertical moves
+		if (dy > 0 && is_valid_position(unit_pos.x, unit_pos.y + 1)) {
+			alternatives[alt_count++] = (t_pos){unit_pos.x, unit_pos.y + 1};
+		} else if (dy < 0 && is_valid_position(unit_pos.x, unit_pos.y - 1)) {
+			alternatives[alt_count++] = (t_pos){unit_pos.x, unit_pos.y - 1};
+		} else {
+			// No y preference, try both
+			if (is_valid_position(unit_pos.x, unit_pos.y + 1)) {
+				alternatives[alt_count++] = (t_pos){unit_pos.x, unit_pos.y + 1};
+			}
+			if (is_valid_position(unit_pos.x, unit_pos.y - 1)) {
+				alternatives[alt_count++] = (t_pos){unit_pos.x, unit_pos.y - 1};
+			}
+		}
 	}
 	else
 	{
-		// Moving vertically, try horizontal
-		int step = (dx > 0) ? 1 : (dx < 0) ? -1 : (rand() % 2) ? 1 : -1;
-		alt_pos.x += step;
+		// Moving vertically, try horizontal moves  
+		if (dx > 0 && is_valid_position(unit_pos.x + 1, unit_pos.y)) {
+			alternatives[alt_count++] = (t_pos){unit_pos.x + 1, unit_pos.y};
+		} else if (dx < 0 && is_valid_position(unit_pos.x - 1, unit_pos.y)) {
+			alternatives[alt_count++] = (t_pos){unit_pos.x - 1, unit_pos.y};
+		} else {
+			// No x preference, try both
+			if (is_valid_position(unit_pos.x + 1, unit_pos.y)) {
+				alternatives[alt_count++] = (t_pos){unit_pos.x + 1, unit_pos.y};
+			}
+			if (is_valid_position(unit_pos.x - 1, unit_pos.y)) {
+				alternatives[alt_count++] = (t_pos){unit_pos.x - 1, unit_pos.y};
+			}
+		}
 	}
 	
-	return alt_pos;
+	// Add diagonal options as backup
+	if (dx != 0 && dy != 0 && alt_count < 4) {
+		int new_x = unit_pos.x + ((dx > 0) ? 1 : -1);
+		int new_y = unit_pos.y + ((dy > 0) ? 1 : -1);
+		if (is_valid_position(new_x, new_y)) {
+			alternatives[alt_count++] = (t_pos){new_x, new_y};
+		}
+	}
+	
+	// Try each alternative in order, return first free space
+	for (int i = 0; i < alt_count; i++)
+	{
+		t_pos alt_pos = alternatives[i];
+		t_obj *alt_obj = core_get_obj_from_pos(alt_pos);
+		if (!alt_obj)
+		{
+			return alt_pos;
+		}
+	}
+	
+	// If all alternatives blocked, return original position (stay put)
+	return unit_pos;
 }
 
 bool should_attack_object(t_obj *unit, t_obj *target)
