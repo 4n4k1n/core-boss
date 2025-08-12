@@ -202,26 +202,50 @@ void control_miner(t_obj *miner, t_obj *core_own, t_obj **all_resources, bool *r
 
 void control_carrier(t_obj *carrier, t_obj *core_own)
 {
-	// Carriers only collect money, return to core when no money available
+	int own_miners, own_carriers, own_warriors;
+	count_unit_types(&own_miners, &own_carriers, &own_warriors);
+	
 	t_obj *nearest_money = ft_get_money_nearest(carrier->pos);
+	bool should_return = false;
 	
-	bool should_return = (carrier->s_unit.balance > 0);
-	
-	if (!should_return && nearest_money)
+	// Determine if we should return based on current game state
+	if (own_miners == 0)
 	{
-		// Collect money from ground
-		move_and_attack(carrier, nearest_money->pos);
+		// No workers yet - collect until we have enough for a worker (100 cost)
+		// But account for money already at core
+		int total_money = core_own->s_core.balance + carrier->s_unit.balance;
+		should_return = (total_money >= 100);
 	}
-	else if (should_return)
+	else
+	{
+		// We have workers - collect until 500 total or no money available
+		int total_money = core_own->s_core.balance + carrier->s_unit.balance;
+		should_return = (total_money >= 300) || !nearest_money;
+	}
+	
+	// Always return if carrier has money and should return
+	if (carrier->s_unit.balance > 0 && should_return)
 	{
 		// Return to core to deposit
 		move_and_attack(carrier, core_own->pos);
 		if (carrier->s_unit.move_cooldown == 0)
 			core_action_transferMoney(carrier, core_own->pos, carrier->s_unit.balance);
 	}
+	else if (!should_return && nearest_money)
+	{
+		// Continue collecting money
+		move_and_attack(carrier, nearest_money->pos);
+	}
+	else if (carrier->s_unit.balance > 0)
+	{
+		// Has money but should return (deposit it)
+		move_and_attack(carrier, core_own->pos);
+		if (carrier->s_unit.move_cooldown == 0)
+			core_action_transferMoney(carrier, core_own->pos, carrier->s_unit.balance);
+	}
 	else
 	{
-		// No money available, return to core
+		// No money to collect and no money to deposit - stay at core
 		move_and_attack(carrier, core_own->pos);
 	}
 }
