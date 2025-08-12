@@ -45,31 +45,26 @@ void ft_on_tick(unsigned long tick)
 void handle_unit_spawning(t_obj *core_own)
 {
 	int own_miners, own_carriers, own_warriors;
-	count_unit_types(&own_miners, &own_carriers, &own_warriors);	
-	bool miners_returned = core_own->s_core.balance > STARTING_MONEY;
-	
+	count_unit_types(&own_miners, &own_carriers, &own_warriors);
+
 	// New strategy: Carrier first -> Worker -> then normal sequence
 	if (own_carriers == 0 && core_own->s_core.balance >= 200)
 	{
 		core_action_createUnit(UNIT_CARRIER);
-	}
-	else if (own_miners == 0 && own_carriers >= 1 && core_own->s_core.balance >= 100)
-	{
-		core_action_createUnit(UNIT_MINER);
 	}
 	// After first carrier + miner, continue normal spawning
 	else if (own_miners < 2 && core_own->s_core.balance >= 100)
 	{
 		core_action_createUnit(UNIT_MINER);
 	}
-	else if (own_carriers < 2 && miners_returned && core_own->s_core.balance >= 200)
+	else if (own_carriers < 2 && core_own->s_core.balance >= 200)
 	{
 		core_action_createUnit(UNIT_CARRIER);
 	}
-	else if (own_miners < 3 && own_carriers >= 2 && core_own->s_core.balance >= 100)
-	{
-		core_action_createUnit(UNIT_MINER);
-	}
+	// else if (own_miners < 3 && own_carriers >= 2 && core_own->s_core.balance >= 100)
+	// {
+	// 	core_action_createUnit(UNIT_MINER);
+	// }
 	else if (core_own->s_core.balance >= 150)
 	{
 		core_action_createUnit(UNIT_WARRIOR);
@@ -82,11 +77,7 @@ void control_all_units(t_obj *core_own)
 	t_obj **units = ft_get_units_own();
 	
 	if (!all_resources || !units)
-	{
-		if (all_resources) free(all_resources);
-		if (units) free(units);
-		return;
-	}
+		return (free(all_resources), free(units));
 
 	// Count resources
 	int resource_count = 0;
@@ -214,15 +205,14 @@ void control_carrier(t_obj *carrier, t_obj *core_own)
 	// Carriers only collect money, return to core when no money available
 	t_obj *nearest_money = ft_get_money_nearest(carrier->pos);
 	
-	bool should_return = ((int)carrier->s_unit.balance >= CARRIER_MAX_BALANCE) || 
-	                    (carrier->s_unit.balance > 0 && !nearest_money);
+	bool should_return = (carrier->s_unit.balance > 0);
 	
 	if (!should_return && nearest_money)
 	{
 		// Collect money from ground
 		move_and_attack(carrier, nearest_money->pos);
 	}
-	else if (carrier->s_unit.balance > 0)
+	else if (should_return)
 	{
 		// Return to core to deposit
 		move_and_attack(carrier, core_own->pos);
@@ -307,35 +297,35 @@ t_obj *find_target_miner_for_carrier(t_obj *carrier)
 	return target_miner;
 }
 
-t_obj *find_low_hp_resource(t_obj *carrier)
-{
-	t_obj **all_resources = ft_get_all_resources();
-	t_obj *best_resource = NULL;
-	double best_distance = -1;
+// t_obj *find_low_hp_resource(t_obj *carrier)
+// {
+// 	t_obj **all_resources = ft_get_all_resources();
+// 	t_obj *best_resource = NULL;
+// 	double best_distance = -1;
 	
-	if (!all_resources)
-		return NULL;
+// 	if (!all_resources)
+// 		return NULL;
 	
-	for (int i = 0; all_resources[i]; i++)
-	{
-		t_obj *resource = all_resources[i];
+// 	for (int i = 0; all_resources[i]; i++)
+// 	{
+// 		t_obj *resource = all_resources[i];
 		
-		// Only look for resources with 1 HP
-		if (resource->hp == 1)
-		{
-			double distance = ft_calculate_distance(carrier->pos, resource->pos);
-			if (best_distance < 0 || distance < best_distance)
-			{
-				// printf("FOUND!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n");
-				best_distance = distance;
-				best_resource = resource;
-			}
-		}
-	}
+// 		// Only look for resources with 1 HP
+// 		if (resource->hp == 1)
+// 		{
+// 			double distance = ft_calculate_distance(carrier->pos, resource->pos);
+// 			if (best_distance < 0 || distance < best_distance)
+// 			{
+// 				// printf("FOUND!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n");
+// 				best_distance = distance;
+// 				best_resource = resource;
+// 			}
+// 		}
+// 	}
 	
-	free(all_resources);
-	return best_resource;
-}
+// 	free(all_resources);
+// 	return best_resource;
+// }
 
 int get_carrier_index(t_obj *carrier)
 {
